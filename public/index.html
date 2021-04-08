@@ -1,0 +1,35 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Main</title>
+  <link rel="stylesheet" href="stylesheet.css">
+  <script src="main.js"></script>
+</head>
+
+<body>
+  <div id="elm"></div>
+  <script>
+    let app;
+    async function getMassShootingIncidents() {
+      const fetchResult = await fetch('../data/json/incidents.json');
+      const incidents = await fetchResult.json();
+      return incidents
+        .map((incident) => ({ ...incident, incidentDate: Date.parse(incident.incidentDate) }));
+    }
+    async function getStateGunLawRatings() {
+      const fetchResult = await fetch('../data/json/gunLaws.json');
+      return await fetchResult.json();
+    }
+
+    Promise.all([getMassShootingIncidents(), getStateGunLawRatings()]).then(([incidents, gunLaws]) => {
+      app = Elm.Main.init({
+        node: document.getElementById('elm'),
+        flags: { incidents, gunLaws }
+      });
+    });
+  </script>
+</body>
+
+</html>
