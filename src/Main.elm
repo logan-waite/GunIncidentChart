@@ -1,18 +1,21 @@
 module Main exposing (..)
 
 import Browser exposing (Document)
-import Element exposing (Element, column, el, fill, height, px, table, text, width, padding, rgb255)
-import Element.Font as Font
+import Element exposing (Attribute, Element, column, el, fill, height, padding, px, shrink, spacing, table, text, width)
 import Element.Border as Border
+import Element.Font as Font
+import Element.Input as Input
 import Html exposing (Html)
 import Html.Attributes as Attr
 import Json.Decode as Decode exposing (Decoder, field)
 import List.Extra as L
-import Plot exposing (circle, decentPositions, dots, hintDot, interval, simpleLabel, simpleLine, simpleTick, viewCircle, viewSeries)
-import Svg
+import Plot exposing (circle, decentPositions, dots, interval, simpleLabel, simpleLine, simpleTick)
 import Time exposing (Posix)
+import UI.Colors
+import UI.Helpers exposing (border)
 
 
+main : Program Decode.Value Model Msg
 main =
     Browser.document
         { init = init
@@ -55,6 +58,10 @@ type alias StateIncidents =
     }
 
 
+type alias UIAttrs msg =
+    List (Attribute msg)
+
+
 
 -- INIT
 
@@ -63,6 +70,8 @@ type alias Model =
     { gunIncidentsRaw : List GunIncidentRaw
     , gunLawsRaw : List GunLawRaw
     , stateIncidents : List StateIncidents
+    , paginatedStateIncidents : List (List StateIncidents)
+    , currentPage : Int
     }
 
 
@@ -71,10 +80,15 @@ init flags =
     let
         { incidentsRaw, gunLawsRaw } =
             Result.withDefault { incidentsRaw = [], gunLawsRaw = [] } (Decode.decodeValue initFlagsDecoder flags)
+
+        stateIncidents =
+            getStateData gunLawsRaw incidentsRaw
     in
     ( { gunIncidentsRaw = incidentsRaw
       , gunLawsRaw = gunLawsRaw
-      , stateIncidents = getStateData gunLawsRaw incidentsRaw
+      , stateIncidents = stateIncidents
+      , paginatedStateIncidents = L.greedyGroupsOf 11 stateIncidents
+      , currentPage = 0
       }
     , Cmd.none
     )
@@ -120,13 +134,34 @@ updateStateGunRatings gunLaws stateIncidents =
 -- UPDATE
 
 
+type PageDirection
+    = Prev
+    | Next
+
+
 type Msg
-    = NoOp
+    = ChangePage PageDirection
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    ( model, Cmd.none )
+    case msg of
+        ChangePage dir ->
+            handlePageChange model dir
+
+
+handlePageChange : Model -> PageDirection -> ( Model, Cmd Msg )
+handlePageChange model dir =
+    let
+        newPage =
+            case dir of
+                Prev ->
+                    model.currentPage - 1
+
+                Next ->
+                    model.currentPage + 1
+    in
+    ( { model | currentPage = clamp 0 (List.length model.paginatedStateIncidents) newPage }, Cmd.none )
 
 
 
@@ -143,12 +178,33 @@ view model =
 layout : Model -> Html Msg
 layout model =
     Element.layout [] <|
-        column [ width fill, ]
+        column [ width fill, spacing 25 ]
             [ el [ height (px 400), width fill ] <| Element.html (scatterChart model.stateIncidents)
-            , dataTable model.stateIncidents
+            , column [ width shrink, Element.centerX ]
+                [ dataTable (L.getAt model.currentPage model.paginatedStateIncidents)
+                , Element.row [ width fill ] [ pageButton Prev "Prev", pageButton Next "Next" ]
+                ]
             ]
 
+
+pageButton : PageDirection -> String -> Element Msg
+pageButton direction label =
+    let
+        alignment : Attribute msg
+        alignment =
+            case direction of
+                Prev ->
+                    Element.alignLeft
+
+                Next ->
+                    Element.alignRight
+    in
+    Input.button [ alignment, Element.paddingXY 0 10 ] { onPress = Just (ChangePage direction), label = text label }
+
+
+
 -- Chart
+
 
 scatterChart : List StateIncidents -> Html msg
 scatterChart data =
@@ -169,6 +225,7 @@ scatterChart data =
         customizedScatterPlot
         [ dots (List.map toDataPoints) ]
         data
+
 
 customizedScatterPlot : Plot.PlotCustomizations msg
 customizedScatterPlot =
@@ -191,42 +248,58 @@ customizedScatterPlot =
     in
     { defaultCustomization | attributes = attributes, horizontalAxis = horizontalAxis }
 
+
+
 -- Data Table
 
-dataTable : List StateIncidents -> Element msg
+
+dataTable : Maybe (List StateIncidents) -> Element msg
 dataTable stateIncidents =
-    table [ width fill ]
-                { data = stateIncidents
-                , columns =
-                    [ { header = tableHeader "State"
-                      , width = fill
-                      , view = \state -> text state.state
-                      }
-                    , { header = tableHeader "Gun Law Strictness"
-                      , width = fill
-                      , view = \state -> text (String.fromInt state.rating)
-                      }
-                    , { header = tableHeader "Incidents"
-                      , width = fill
-                      , view = \state -> text (String.fromInt state.incidents)
-                      }
-                    ]
-                }
+    el [ width fill ] <|
+        table (combineAttrs [ solidBlackBorder, [ width shrink, Element.centerX ] ])
+            { data = Maybe.withDefault [] stateIncidents
+            , columns =
+                [ { header = tableHeader "State"
+                  , width = shrink
+                  , view = cell [ solidBlackBorder, [ padding 10 ] ] .state
+                  }
+                , { header = tableHeader "Gun Law Rating"
+                  , width = shrink
+                  , view = cell [ solidBlackBorder, [ padding 10, Font.alignRight ] ] (.rating >> String.fromInt)
+                  }
+                , { header = tableHeader "Incidents"
+                  , width = shrink
+                  , view = cell [ solidBlackBorder, [ padding 10, Font.alignRight ] ] (.incidents >> String.fromInt)
+                  }
+                ]
+            }
+
+
+solidBlackBorder : List (Attribute msg)
+solidBlackBorder =
+    border 1 Border.solid UI.Colors.black
+
+
+cell : List (UIAttrs msg) -> (data -> String) -> data -> Element msg
+cell attrs getter val =
+    el (combineAttrs attrs) (text (getter val))
+
 
 tableHeader : String -> Element msg
 tableHeader header =
-    el 
-        [ Font.size 20
-        , Font.heavy
-        , padding 10
-        , Border.width 1
-        , Border.color (rgb255 0 0 0)
-        ] 
+    el
+        (combineAttrs
+            [ border 1 Border.solid UI.Colors.black
+            , [ Font.size 20
+              , Font.heavy
+              , padding 10
+              ]
+            ]
+        )
         (text header)
 
 
--- Helpers
-borderBottom -> 
+
 -- DECODERS
 
 
@@ -260,3 +333,17 @@ gunIncidentsDecoder =
             (field "cityOrCounty" Decode.string)
             (field "killed" Decode.int)
             (field "injured" Decode.int)
+
+
+
+-- GENERICS
+
+
+combineAttrs : List (List (Attribute msg)) -> List (Attribute msg)
+combineAttrs =
+    listFlatten
+
+
+listFlatten : List (List a) -> List a
+listFlatten list =
+    List.foldl (\sub result -> result ++ sub) [] list

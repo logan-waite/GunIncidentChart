@@ -13,13 +13,13 @@
   <script>
     let app;
     async function getMassShootingIncidents() {
-      const fetchResult = await fetch('../data/json/incidents.json');
+      const fetchResult = await fetch('./data/json/incidents.json');
       const incidents = await fetchResult.json();
       return incidents
         .map((incident) => ({ ...incident, incidentDate: Date.parse(incident.incidentDate) }));
     }
     async function getStateGunLawRatings() {
-      const fetchResult = await fetch('../data/json/gunLaws.json');
+      const fetchResult = await fetch('./data/json/gunLaws.json');
       return await fetchResult.json();
     }
 

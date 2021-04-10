@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "scripts": {
+    "watch": "chokidar './src/**/*.elm' -c 'elm make src/Main.elm --output=./public/main.js' --initial"
+  },
   "dependencies": {
-    "date-fns": "^2.19.0",
+    "chokidar-cli": "^2.1.0",
     "elm-review": "^2.5.0",
     "lodash": "^4.17.21"
   },
